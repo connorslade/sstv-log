@@ -1,11 +1,12 @@
 use anyhow::Result;
 use hound::WavReader;
-use image::{ImageBuffer, Rgb};
-use num_complex::{Complex, ComplexFloat};
 use rustfft::FftPlanner;
 
 use algo::RealSignalExt;
+
+use crate::{algo::peak_freq, sstv::SstvDecoder};
 mod algo;
+mod sstv;
 
 const FFT_SIZE: usize = 64;
 
@@ -20,11 +21,8 @@ fn main() -> Result<()> {
 
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(FFT_SIZE);
-    let bin = |freq: f32| (freq * 64.0 / sample_rate as f32) as usize;
 
-    let mut img = ImageBuffer::new(500, 300);
-    let mut row = Vec::new();
-    let mut y = 0;
+    let mut decoder = SstvDecoder::new(sample_rate);
 
     let mut idx = 0;
     while idx + FFT_SIZE <= samples.len() {
@@ -34,40 +32,9 @@ fn main() -> Result<()> {
         let mut samples = (chunk.iter().copied().hamming().to_complex()).collect::<Vec<_>>();
         fft.process(&mut samples);
 
-        // found horizontal sync pulse
-        if samples[bin(1200.0)].abs() >= 5.0 {
-            if !row.is_empty() {
-                let third = row.len() / 3;
-                for i in 0..third {
-                    let color = Rgb([row[2 * third + i], row[i], row[third + i]]);
-                    img.put_pixel(i as u32, y, color);
-                }
-                row.clear();
-                y += 1;
-            }
-            continue;
-        }
-
-        // values range from 1,500 and 2,300 Hz
-        let (bl, bu) = (bin(1500.0), bin(2300.0));
-        let w_avg = weighted_index(&samples[bl..=bu]);
-        row.push((w_avg * 255.0) as u8);
+        let freq = peak_freq(&samples, sample_rate);
+        decoder.freq(freq);
     }
-
-    img.save("out.png")?;
 
     Ok(())
-}
-
-fn weighted_index(samples: &[Complex<f32>]) -> f32 {
-    let mut w_avg = 0.0;
-    let mut sum = 0.0;
-
-    for (i, sample) in samples.iter().enumerate() {
-        let mag = sample.abs();
-        w_avg += i as f32 * mag;
-        sum += mag;
-    }
-
-    w_avg / sum / samples.len() as f32
 }
