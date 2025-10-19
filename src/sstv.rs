@@ -15,6 +15,8 @@ enum DecoderState {
         img: ImageBuffer<Rgb<u8>, Vec<u8>>,
         row: Vec<f32>,
         y: u32,
+
+        tmp: Vec<bool>,
     },
 }
 
@@ -40,9 +42,8 @@ impl SstvDecoder {
     pub fn freq(&mut self, freq: f32) {
         match &mut self.state {
             DecoderState::Idle { header } => {
-                // 1/4th decimation
                 // header_duration: 600ms 90% on
-                let samples = (600 * self.sample_rate / 1000 / 4) as usize;
+                let samples = (600 * self.sample_rate / 1000) as usize;
 
                 header.push((freq - 1900.0) < 50.0);
                 while header.len() > samples {
@@ -61,13 +62,23 @@ impl SstvDecoder {
                         img: ImageBuffer::new(320, 300),
                         row: Vec::new(),
                         y: 0,
+                        tmp: Vec::new(),
                     };
                 }
             }
-            DecoderState::Decoding { img, row, y } => {
+            DecoderState::Decoding { img, row, y, tmp } => {
                 //  horizontal sync pulse
-                if (freq - 1200.0) < 50.0 {
-                    if !row.is_empty() {
+                tmp.push((freq - 1200.0).abs() < 50.0);
+                let samples = 90;
+                while tmp.len() > samples {
+                    tmp.remove(0);
+                }
+
+                let active = tmp.iter().filter(|&&x| x).count();
+                let fraction = active as f32 / samples as f32;
+
+                if fraction >= 0.9 {
+                    if !row.is_empty() && *y < img.height() {
                         let get = |x: f32| {
                             let idx = row.len() as f32 * x;
 
@@ -79,6 +90,7 @@ impl SstvDecoder {
                         for x in 0..img.width() {
                             let t = x as f32 / img.width() as f32 / 3.0;
                             let color = Rgb([get(t + 2. / 3.), get(t), get(t + 1. / 3.)]);
+                            // let color = Rgb([get(t), get(t), get(t)]);
                             img.put_pixel(x, *y, color);
                         }
 

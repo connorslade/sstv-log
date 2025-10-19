@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 
-use num_complex::{Complex, ComplexFloat};
+use num_complex::Complex;
+use rustfft::FftPlanner;
 
 pub trait RealSignalExt {
     fn hamming(self) -> impl Iterator<Item = f32>;
@@ -11,19 +12,26 @@ pub trait RealExt {
     fn saturate(self) -> Self;
 }
 
-pub fn peak_freq(spectrum: &[Complex<f32>], sample_rate: u32) -> f32 {
-    let mags = spectrum.iter().map(|c| c.abs()).collect::<Vec<_>>();
-    let (max_index_offset, _) = (mags[1..spectrum.len() / 2].iter().enumerate())
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let x = max_index_offset + 1;
+pub fn hilbert_transform(planner: &mut FftPlanner<f32>, real: &[f32]) -> Vec<Complex<f32>> {
+    let (fft, ifft) = (
+        planner.plan_fft_forward(real.len()),
+        planner.plan_fft_inverse(real.len()),
+    );
 
-    let y1 = mags[x - 1];
-    let y2 = mags[x];
-    let y3 = mags[x + 1];
+    let mut hilbert = (real.iter().copied().hamming().to_complex()).collect::<Vec<_>>();
+    fft.process(&mut hilbert);
 
-    let delta = 0.5 * (y1 - y3) / (y1 - 2.0 * y2 + y3);
-    ((x as f32 + delta) * sample_rate as f32) / spectrum.len() as f32
+    let n = hilbert.len();
+    for (i, sample) in hilbert.iter_mut().enumerate() {
+        if i > 0 && i < n / 2 {
+            *sample *= 2.0;
+        } else if !(i == 0 || (n % 2 == 0 && i == n / 2)) {
+            *sample = Complex::new(0.0, 0.0);
+        }
+    }
+
+    ifft.process(&mut hilbert);
+    hilbert
 }
 
 impl<T: Iterator<Item = f32>> RealSignalExt for T {

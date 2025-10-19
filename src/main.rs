@@ -1,17 +1,18 @@
+use std::f32::consts::TAU;
+
 use anyhow::Result;
 use hound::WavReader;
+use num_complex::Complex;
 use rustfft::FftPlanner;
 
-use algo::RealSignalExt;
-
-use crate::{algo::peak_freq, sstv::SstvDecoder};
+use crate::{algo::hilbert_transform, sstv::SstvDecoder};
 mod algo;
 mod sstv;
 
-const FFT_SIZE: usize = 64;
+const FFT_SIZE: usize = 1 << 13;
 
 fn main() -> Result<()> {
-    let audio = WavReader::open("input.wav")?;
+    let audio = WavReader::open("input2-int.wav")?;
     let sample_rate = audio.spec().sample_rate;
 
     let samples = audio
@@ -20,20 +21,20 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
 
     let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(FFT_SIZE);
-
     let mut decoder = SstvDecoder::new(sample_rate);
 
-    let mut idx = 0;
-    while idx + FFT_SIZE <= samples.len() {
-        let chunk = &samples[idx..(idx + FFT_SIZE)];
-        idx += 4;
-
-        let mut samples = (chunk.iter().copied().hamming().to_complex()).collect::<Vec<_>>();
-        fft.process(&mut samples);
-
-        let freq = peak_freq(&samples, sample_rate);
-        decoder.freq(freq);
+    let mut last = Complex::new(1.0, 0.0);
+    for chunk in samples.chunks(FFT_SIZE) {
+        let signal = hilbert_transform(&mut planner, chunk);
+        for next in signal {
+            if last == Complex::ZERO {
+                decoder.freq(0.0);
+            } else {
+                let freq = (next / last).arg() * sample_rate as f32 / TAU;
+                decoder.freq(freq);
+            }
+            last = next;
+        }
     }
 
     Ok(())
