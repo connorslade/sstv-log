@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+crossbeam-channel = "0.5.15"
+# cpal = "0.16.0"
 hound = "3.5.1"
 image = "=0.25.6"
 num-complex = "0.4.6"

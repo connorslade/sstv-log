@@ -1,4 +1,4 @@
-use std::f32::consts::TAU;
+use std::{f32::consts::TAU, thread};
 
 use anyhow::Result;
 use hound::WavReader;
@@ -8,7 +8,7 @@ use rustfft::FftPlanner;
 use crate::{
     algo::hilbert_transform,
     filters::{LowPassFilter, MovingAverageFilter},
-    sstv::SstvDecoder,
+    sstv::{Image, SstvDecoder},
 };
 mod algo;
 mod filters;
@@ -18,7 +18,7 @@ mod sstv;
 const FFT_SIZE: usize = 1 << 13;
 
 fn main() -> Result<()> {
-    let audio = WavReader::open("/home/connorslade/Downloads/sstv_signal.wav")?;
+    let audio = WavReader::open("input2-noise-int.wav")?;
     let sample_rate = audio.spec().sample_rate;
 
     let samples = audio
@@ -26,13 +26,20 @@ fn main() -> Result<()> {
         .map(|x| x.unwrap() as f32 / i16::MAX as f32)
         .collect::<Vec<_>>();
 
+    let (tx, rx) = crossbeam_channel::unbounded::<Image>();
+    thread::spawn(move || {
+        for img in rx.iter() {
+            img.save("out.png").unwrap();
+        }
+    });
+
     let mut planner = FftPlanner::new();
-    let mut decoder = SstvDecoder::new(sample_rate);
+    let mut decoder = SstvDecoder::new(sample_rate, tx);
 
     let mut avg = MovingAverageFilter::new(32);
     let mut low_pass = LowPassFilter::new(2300.0, sample_rate as f32);
 
-    let mut last = Complex::new(1.0, 0.0);
+    let mut last = Complex::ZERO;
     for chunk in samples.chunks(FFT_SIZE) {
         let signal = hilbert_transform(&mut planner, chunk);
         for next in signal {
