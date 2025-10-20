@@ -4,7 +4,7 @@ use num_complex::Complex;
 use rustfft::FftPlanner;
 
 pub trait RealSignalExt {
-    fn hamming(self) -> impl Iterator<Item = f32>;
+    fn hann(self) -> impl Iterator<Item = f32>;
     fn to_complex(self) -> impl Iterator<Item = Complex<f32>>;
 }
 
@@ -18,7 +18,7 @@ pub fn hilbert_transform(planner: &mut FftPlanner<f32>, real: &[f32]) -> Vec<Com
         planner.plan_fft_inverse(real.len()),
     );
 
-    let mut hilbert = (real.iter().copied().hamming().to_complex()).collect::<Vec<_>>();
+    let mut hilbert = (real.iter().copied().hann().to_complex()).collect::<Vec<_>>();
     fft.process(&mut hilbert);
 
     let n = hilbert.len();
@@ -39,7 +39,7 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
 }
 
 impl<T: Iterator<Item = f32>> RealSignalExt for T {
-    fn hamming(self) -> impl Iterator<Item = f32> {
+    fn hann(self) -> impl Iterator<Item = f32> {
         let len = self.size_hint().0;
         self.enumerate().map(move |(i, x)| {
             let window = 0.5 - 0.5 * (2.0 * PI * i as f32 / (len as f32)).cos();

@@ -5,15 +5,20 @@ use hound::WavReader;
 use num_complex::Complex;
 use rustfft::FftPlanner;
 
-use crate::{algo::hilbert_transform, sstv::SstvDecoder};
+use crate::{
+    algo::hilbert_transform,
+    filters::{LowPassFilter, MovingAverageFilter},
+    sstv::SstvDecoder,
+};
 mod algo;
-mod pulse_detector;
+mod filters;
+mod pulse;
 mod sstv;
 
 const FFT_SIZE: usize = 1 << 13;
 
 fn main() -> Result<()> {
-    let audio = WavReader::open("input2-int.wav")?;
+    let audio = WavReader::open("/home/connorslade/Downloads/sstv_signal.wav")?;
     let sample_rate = audio.spec().sample_rate;
 
     let samples = audio
@@ -24,6 +29,9 @@ fn main() -> Result<()> {
     let mut planner = FftPlanner::new();
     let mut decoder = SstvDecoder::new(sample_rate);
 
+    let mut avg = MovingAverageFilter::new(32);
+    let mut low_pass = LowPassFilter::new(2300.0, sample_rate as f32);
+
     let mut last = Complex::new(1.0, 0.0);
     for chunk in samples.chunks(FFT_SIZE) {
         let signal = hilbert_transform(&mut planner, chunk);
@@ -32,7 +40,7 @@ fn main() -> Result<()> {
                 decoder.freq(0.0);
             } else {
                 let freq = (next / last).arg() * sample_rate as f32 / TAU;
-                decoder.freq(freq);
+                decoder.freq(avg.update(low_pass.update(freq)));
             }
             last = next;
         }

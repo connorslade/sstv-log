@@ -2,7 +2,7 @@ use image::{ImageBuffer, Rgb};
 
 use crate::{
     algo::{RealExt, lerp},
-    pulse_detector::{PulseDetector, PulseDetectorConfig},
+    pulse::{PulseDetector, PulseDetectorConfig},
 };
 
 pub struct SstvDecoder {
@@ -12,6 +12,7 @@ pub struct SstvDecoder {
 
 struct ImageBuilder {
     img: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    sample_rate: u32,
     y: u32,
 }
 
@@ -28,15 +29,15 @@ enum DecoderState {
 
 const HEADER_PULSE: PulseDetectorConfig = PulseDetectorConfig {
     freq: 1900.0,
-    range: 50.0,
+    range: 100.0,
 
-    threshold: 0.9,
+    threshold: 0.45,
     duration: 0.6,
 };
 
 const SYNC_PULSE: PulseDetectorConfig = PulseDetectorConfig {
     freq: 1200.0,
-    range: 50.0,
+    range: 200.0,
 
     threshold: 0.45,
     duration: 0.002,
@@ -59,10 +60,12 @@ impl SstvDecoder {
                     return;
                 }
 
+                println!("starting decode");
                 self.state = DecoderState::Decoding {
                     sync: PulseDetector::new(SYNC_PULSE, self.sample_rate),
                     img: ImageBuilder {
                         img: ImageBuffer::new(320, 256),
+                        sample_rate: self.sample_rate,
                         y: 0,
                     },
                     row: Vec::new(),
@@ -70,7 +73,10 @@ impl SstvDecoder {
             }
             DecoderState::Decoding { sync, img, row } => {
                 if sync.update(freq) {
-                    img.push_row(row);
+                    if row.len() > (0.2 * self.sample_rate as f32) as usize {
+                        img.push_row(row);
+                        row.clear();
+                    }
                     return;
                 }
 
@@ -82,8 +88,18 @@ impl SstvDecoder {
 }
 
 impl ImageBuilder {
-    pub fn push_row(&mut self, row: &mut Vec<f32>) {
-        if !row.is_empty() && self.y < self.img.height() {
+    pub fn push_row(&mut self, row: &[f32]) {
+        let samples_per_row = 0.48 * self.sample_rate as f32;
+        let rows = (row.len() as f32 / samples_per_row).round() as usize;
+        if rows == 0 {
+            return;
+        }
+
+        for row in row.chunks(row.len() / rows) {
+            if self.y >= self.img.height() {
+                return;
+            }
+
             let get = |x: f32| {
                 let idx = row.len() as f32 * x;
 
@@ -96,11 +112,11 @@ impl ImageBuilder {
             for x in 0..width {
                 let t = x as f32 / width as f32 / 3.0;
                 let color = Rgb([get(t + 2. / 3.), get(t), get(t + 1. / 3.)]);
+                // let color = Rgb([get(t), get(t), get(t)]);
                 self.img.put_pixel(x, self.y, color);
             }
 
             self.y += 1;
-            row.clear();
         }
     }
 }
