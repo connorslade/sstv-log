@@ -7,6 +7,7 @@ use rustfft::FftPlanner;
 
 use crate::{algo::hilbert_transform, sstv::SstvDecoder};
 mod algo;
+mod pulse_detector;
 mod sstv;
 
 const FFT_SIZE: usize = 1 << 13;

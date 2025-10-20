@@ -1,40 +1,53 @@
 use image::{ImageBuffer, Rgb};
 
-use crate::algo::RealExt;
+use crate::{
+    algo::{RealExt, lerp},
+    pulse_detector::{PulseDetector, PulseDetectorConfig},
+};
 
 pub struct SstvDecoder {
     state: DecoderState,
     sample_rate: u32,
 }
 
+struct ImageBuilder {
+    img: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    y: u32,
+}
+
 enum DecoderState {
     Idle {
-        header: Vec<bool>,
+        header: PulseDetector,
     },
     Decoding {
-        img: ImageBuffer<Rgb<u8>, Vec<u8>>,
+        sync: PulseDetector,
+        img: ImageBuilder,
         row: Vec<f32>,
-        y: u32,
-
-        tmp: Vec<bool>,
     },
 }
 
-impl Drop for DecoderState {
-    fn drop(&mut self) {
-        match self {
-            DecoderState::Idle { .. } => {}
-            DecoderState::Decoding { img, .. } => {
-                img.save("out.png").unwrap();
-            }
-        }
-    }
-}
+const HEADER_PULSE: PulseDetectorConfig = PulseDetectorConfig {
+    freq: 1900.0,
+    range: 50.0,
+
+    threshold: 0.9,
+    duration: 0.6,
+};
+
+const SYNC_PULSE: PulseDetectorConfig = PulseDetectorConfig {
+    freq: 1200.0,
+    range: 50.0,
+
+    threshold: 0.45,
+    duration: 0.002,
+};
 
 impl SstvDecoder {
     pub fn new(sample_rate: u32) -> Self {
         Self {
-            state: DecoderState::Idle { header: Vec::new() },
+            state: DecoderState::Idle {
+                header: PulseDetector::new(HEADER_PULSE, sample_rate),
+            },
             sample_rate,
         }
     }
@@ -42,62 +55,22 @@ impl SstvDecoder {
     pub fn freq(&mut self, freq: f32) {
         match &mut self.state {
             DecoderState::Idle { header } => {
-                // header_duration: 600ms 90% on
-                let samples = (600 * self.sample_rate / 1000) as usize;
-
-                header.push((freq - 1900.0) < 50.0);
-                while header.len() > samples {
-                    header.remove(0);
-                }
-
-                if header.len() < samples {
+                if !header.update(freq) {
                     return;
                 }
 
-                let active = header.iter().filter(|&&x| x).count();
-                let fraction = active as f32 / samples as f32;
-
-                if fraction >= 0.9 {
-                    self.state = DecoderState::Decoding {
-                        img: ImageBuffer::new(320, 300),
-                        row: Vec::new(),
+                self.state = DecoderState::Decoding {
+                    sync: PulseDetector::new(SYNC_PULSE, self.sample_rate),
+                    img: ImageBuilder {
+                        img: ImageBuffer::new(320, 256),
                         y: 0,
-                        tmp: Vec::new(),
-                    };
-                }
+                    },
+                    row: Vec::new(),
+                };
             }
-            DecoderState::Decoding { img, row, y, tmp } => {
-                //  horizontal sync pulse
-                tmp.push((freq - 1200.0).abs() < 50.0);
-                let samples = 90;
-                while tmp.len() > samples {
-                    tmp.remove(0);
-                }
-
-                let active = tmp.iter().filter(|&&x| x).count();
-                let fraction = active as f32 / samples as f32;
-
-                if fraction >= 0.9 {
-                    if !row.is_empty() && *y < img.height() {
-                        let get = |x: f32| {
-                            let idx = row.len() as f32 * x;
-
-                            let prev = row[idx as usize];
-                            let next = row[(idx.ceil() as usize).min(row.len() - 1)];
-                            (lerp(prev, next, idx.fract()) * 255.0) as u8
-                        };
-
-                        for x in 0..img.width() {
-                            let t = x as f32 / img.width() as f32 / 3.0;
-                            let color = Rgb([get(t + 2. / 3.), get(t), get(t + 1. / 3.)]);
-                            // let color = Rgb([get(t), get(t), get(t)]);
-                            img.put_pixel(x, *y, color);
-                        }
-
-                        row.clear();
-                        *y += 1;
-                    }
-
+            DecoderState::Decoding { sync, img, row } => {
+                if sync.update(freq) {
+                    img.push_row(row);
                     return;
                 }
 
@@ -108,6 +81,37 @@ impl SstvDecoder {
     }
 }
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
+impl ImageBuilder {
+    pub fn push_row(&mut self, row: &mut Vec<f32>) {
+        if !row.is_empty() && self.y < self.img.height() {
+            let get = |x: f32| {
+                let idx = row.len() as f32 * x;
+
+                let prev = row[idx as usize];
+                let next = row[(idx.ceil() as usize).min(row.len() - 1)];
+                (lerp(prev, next, idx.fract()) * 255.0) as u8
+            };
+
+            let width = self.img.width();
+            for x in 0..width {
+                let t = x as f32 / width as f32 / 3.0;
+                let color = Rgb([get(t + 2. / 3.), get(t), get(t + 1. / 3.)]);
+                self.img.put_pixel(x, self.y, color);
+            }
+
+            self.y += 1;
+            row.clear();
+        }
+    }
+}
+
+impl Drop for DecoderState {
+    fn drop(&mut self) {
+        match self {
+            DecoderState::Idle { .. } => {}
+            DecoderState::Decoding { img, .. } => {
+                img.img.save("out.png").unwrap();
+            }
+        }
+    }
 }

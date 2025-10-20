@@ -26,12 +26,16 @@ pub fn hilbert_transform(planner: &mut FftPlanner<f32>, real: &[f32]) -> Vec<Com
         if i > 0 && i < n / 2 {
             *sample *= 2.0;
         } else if !(i == 0 || (n % 2 == 0 && i == n / 2)) {
-            *sample = Complex::new(0.0, 0.0);
+            *sample *= 0.0;
         }
     }
 
     ifft.process(&mut hilbert);
     hilbert
+}
+
+pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 impl<T: Iterator<Item = f32>> RealSignalExt for T {
