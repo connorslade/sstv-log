@@ -5,6 +5,7 @@ use image::{ImageBuffer, Rgb};
 
 use crate::{
     algo::{RealExt, lerp},
+    filters::{LowPassFilter, MovingAverageFilter},
     pulse::{PulseDetector, PulseDetectorConfig},
 };
 
@@ -13,6 +14,9 @@ pub type Image = ImageBuffer<Rgb<u8>, Vec<u8>>;
 pub struct SstvDecoder {
     state: DecoderState,
     sample_rate: u32,
+
+    f_avg: MovingAverageFilter,
+    f_low_pass: LowPassFilter,
 
     tx: Sender<Image>,
 }
@@ -55,11 +59,17 @@ impl SstvDecoder {
         Self {
             state: DecoderState::idle(sample_rate),
             sample_rate,
+
+            f_avg: MovingAverageFilter::new(32),
+            f_low_pass: LowPassFilter::new(2300.0, sample_rate as f32),
+
             tx,
         }
     }
 
     pub fn freq(&mut self, freq: f32) {
+        let freq = self.f_avg.update(self.f_low_pass.update(freq));
+
         match &mut self.state {
             DecoderState::Idle { header } => {
                 if !header.update(freq) {
