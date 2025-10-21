@@ -1,9 +1,6 @@
 use std::f32::consts::PI;
 
 use num_complex::Complex;
-use rustfft::FftPlanner;
-
-use crate::FFT_SIZE;
 
 pub trait RealSignalExt {
     fn hann(self) -> impl Iterator<Item = f32>;
@@ -12,35 +9,6 @@ pub trait RealSignalExt {
 
 pub trait RealExt {
     fn saturate(self) -> Self;
-}
-
-pub fn hilbert_transform(
-    planner: &mut FftPlanner<f32>,
-    real: impl Iterator<Item = f32>,
-) -> Vec<Complex<f32>> {
-    let (fft, ifft) = (
-        planner.plan_fft_forward(FFT_SIZE),
-        planner.plan_fft_inverse(FFT_SIZE),
-    );
-
-    let mut hilbert = (real.hann().to_complex()).collect::<Vec<_>>();
-    fft.process(&mut hilbert);
-
-    let n = hilbert.len();
-    for (i, sample) in hilbert.iter_mut().enumerate() {
-        if i > 0 && i < n / 2 {
-            *sample *= 2.0;
-        } else if !(i == 0 || (n % 2 == 0 && i == n / 2)) {
-            *sample *= 0.0;
-        }
-    }
-
-    ifft.process(&mut hilbert);
-    hilbert
-}
-
-pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
 }
 
 impl<T: Iterator<Item = f32>> RealSignalExt for T {

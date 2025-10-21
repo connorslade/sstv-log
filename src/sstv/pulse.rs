@@ -3,6 +3,22 @@ use ringbuf::{
     traits::{Consumer, Observer, RingBuffer},
 };
 
+pub const HEADER_PULSE: PulseDetectorConfig = PulseDetectorConfig {
+    freq: 1900.0,
+    range: 100.0,
+
+    threshold: 0.45,
+    duration: 0.6,
+};
+
+pub const SYNC_PULSE: PulseDetectorConfig = PulseDetectorConfig {
+    freq: 1200.0,
+    range: 100.0,
+
+    threshold: 0.45,
+    duration: 0.002,
+};
+
 pub struct PulseDetectorConfig {
     pub freq: f32,
     pub range: f32,

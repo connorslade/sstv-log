@@ -1,3 +1,5 @@
+#![feature(array_windows)]
+
 use std::{collections::VecDeque, f32::consts::TAU};
 
 use anyhow::Result;
@@ -6,12 +8,10 @@ use num_complex::Complex;
 use rustfft::FftPlanner;
 
 use crate::{
-    algo::hilbert_transform,
-    sstv::{Image, SstvDecoder},
+    dsp::hilbert_transform,
+    sstv::{decode::SstvDecoder, image::Image},
 };
-mod algo;
-mod filters;
-mod pulse;
+mod dsp;
 mod sstv;
 
 const FFT_SIZE: usize = 1 << 13;
@@ -40,12 +40,12 @@ fn main() -> Result<()> {
                     let chunk = buffer.drain(..FFT_SIZE);
                     let signal = hilbert_transform(&mut planner, chunk);
 
-                    for pair in signal.windows(2) {
-                        if pair[1] == Complex::ZERO {
+                    for [prev, next] in signal.array_windows() {
+                        if *prev == Complex::ZERO {
                             continue;
                         }
 
-                        let freq = (pair[1] / pair[0]).arg() * sample_rate as f32 / TAU;
+                        let freq = (next / prev).arg() * sample_rate as f32 / TAU;
                         decoder.freq(freq);
                     }
                 }
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     stream.play().unwrap();
 
     for img in rx.iter() {
-        img.save("out.png").unwrap();
+        img.save("test/out.png").unwrap();
     }
 
     Ok(())
