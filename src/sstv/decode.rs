@@ -1,6 +1,4 @@
-use std::mem;
-
-use crossbeam_channel::Sender;
+use tokio::sync::broadcast::Sender;
 
 use crate::{
     dsp::{
@@ -16,11 +14,19 @@ use crate::{
 pub struct SstvDecoder {
     state: DecoderState,
     sample_rate: u32,
+    sample: u64,
 
     f_avg: MovingAverageFilter,
     f_low_pass: LowPassFilter,
 
-    tx: Sender<Image>,
+    tx: Sender<SstvEvent>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SstvEvent {
+    DecodeStart,
+    DecodeProgress(f32),
+    DecodeEnd(Image),
 }
 
 enum DecoderState {
@@ -29,16 +35,19 @@ enum DecoderState {
     },
     Decoding {
         sync: PulseDetector,
+        last_sync: u64,
+
         img: ImageBuilder,
         row: Vec<f32>,
     },
 }
 
 impl SstvDecoder {
-    pub fn new(sample_rate: u32, tx: Sender<Image>) -> Self {
+    pub fn new(sample_rate: u32, tx: Sender<SstvEvent>) -> Self {
         Self {
             state: DecoderState::idle(sample_rate),
             sample_rate,
+            sample: 0,
 
             f_avg: MovingAverageFilter::new(32),
             f_low_pass: LowPassFilter::new(2300.0, sample_rate as f32),
@@ -49,6 +58,7 @@ impl SstvDecoder {
 
     pub fn freq(&mut self, freq: f32) {
         let freq = self.f_avg.update(self.f_low_pass.update(freq));
+        self.sample += 1;
 
         match &mut self.state {
             DecoderState::Idle { header } => {
@@ -56,24 +66,41 @@ impl SstvDecoder {
                     return;
                 }
 
-                println!("starting decode");
+                self.tx.send(SstvEvent::DecodeStart).unwrap();
                 self.state = DecoderState::decoding(self.sample_rate);
             }
-            DecoderState::Decoding { sync, img, row } => {
-                if !sync.update(freq) {
-                    let value = (freq - 1500.0) / (2300.0 - 1500.0);
-                    row.push(value.saturate());
+            DecoderState::Decoding {
+                sync,
+                last_sync,
+                img,
+                row,
+            } => {
+                if self.sample - *last_sync > 3 * self.sample_rate as u64 {
+                    self.tx.send(SstvEvent::DecodeEnd(img.finish())).unwrap();
+                    self.state = DecoderState::idle(self.sample_rate);
                     return;
                 }
 
+                if !sync.update(freq) {
+                    let value = (freq - 1500.0) / (2300.0 - 1500.0);
+
+                    if value.abs() > 1.0 {
+                        row.push(row.last().copied().unwrap_or_default());
+                    } else {
+                        row.push(value.saturate());
+                    }
+                    return;
+                }
+
+                *last_sync = self.sample;
                 if row.len() > (0.2 * self.sample_rate as f32) as usize {
-                    println!("Row {}/255", img.y);
+                    let progress = img.y as f32 / img.img.height() as f32;
+                    self.tx.send(SstvEvent::DecodeProgress(progress)).unwrap();
                     img.push_row(row);
                     row.clear();
 
                     if img.finished() {
-                        println!("decoded image");
-                        self.tx.send(mem::take(&mut img.img)).unwrap();
+                        self.tx.send(SstvEvent::DecodeEnd(img.finish())).unwrap();
                         self.state = DecoderState::idle(self.sample_rate);
                     }
                 }
@@ -92,6 +119,8 @@ impl DecoderState {
     pub fn decoding(sample_rate: u32) -> Self {
         DecoderState::Decoding {
             sync: PulseDetector::new(SYNC_PULSE, sample_rate),
+            last_sync: 0,
+
             img: ImageBuilder::new(sample_rate, 320, 256),
             row: Vec::new(),
         }

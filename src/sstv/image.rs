@@ -1,3 +1,5 @@
+use std::mem;
+
 use image::{ImageBuffer, Rgb};
 
 pub type Image = ImageBuffer<Rgb<u8>, Vec<u8>>;
@@ -51,6 +53,10 @@ impl ImageBuilder {
 
     pub fn finished(&self) -> bool {
         self.y >= self.img.height()
+    }
+
+    pub fn finish(&mut self) -> Image {
+        mem::take(&mut self.img)
     }
 }
 

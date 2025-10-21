@@ -16,7 +16,7 @@ pub const SYNC_PULSE: PulseDetectorConfig = PulseDetectorConfig {
     range: 100.0,
 
     threshold: 0.45,
-    duration: 0.002,
+    duration: 0.004,
 };
 
 pub struct PulseDetectorConfig {

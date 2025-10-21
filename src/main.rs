@@ -6,13 +6,16 @@ use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use num_complex::Complex;
 use rustfft::FftPlanner;
+use tokio::{runtime::Runtime, sync::broadcast};
 
 use crate::{
     dsp::hilbert_transform,
-    sstv::{decode::SstvDecoder, image::Image},
+    sstv::decode::{SstvDecoder, SstvEvent},
+    web::web_server,
 };
 mod dsp;
 mod sstv;
+mod web;
 
 const FFT_SIZE: usize = 1 << 13;
 
@@ -24,7 +27,7 @@ fn main() -> Result<()> {
     let config = configs.next().unwrap().with_max_sample_rate();
     let sample_rate = config.sample_rate().0;
 
-    let (tx, rx) = crossbeam_channel::unbounded::<Image>();
+    let (tx, rx) = broadcast::channel::<SstvEvent>(16);
 
     let mut planner = FftPlanner::new();
     let mut decoder = SstvDecoder::new(sample_rate, tx);
@@ -56,9 +59,7 @@ fn main() -> Result<()> {
         .unwrap();
     stream.play().unwrap();
 
-    for img in rx.iter() {
-        img.save("test/out.png").unwrap();
-    }
+    Runtime::new()?.block_on(web_server(rx))?;
 
     Ok(())
 }
