@@ -1,4 +1,4 @@
-use std::mem;
+use std::{fs, mem};
 
 use crossbeam_channel::Sender;
 use image::{ImageBuffer, Rgb};
@@ -14,6 +14,7 @@ pub type Image = ImageBuffer<Rgb<u8>, Vec<u8>>;
 pub struct SstvDecoder {
     state: DecoderState,
     sample_rate: u32,
+    history: Vec<f32>,
 
     f_avg: MovingAverageFilter,
     f_low_pass: LowPassFilter,
@@ -48,7 +49,7 @@ const HEADER_PULSE: PulseDetectorConfig = PulseDetectorConfig {
 
 const SYNC_PULSE: PulseDetectorConfig = PulseDetectorConfig {
     freq: 1200.0,
-    range: 200.0,
+    range: 100.0,
 
     threshold: 0.45,
     duration: 0.002,
@@ -59,6 +60,7 @@ impl SstvDecoder {
         Self {
             state: DecoderState::idle(sample_rate),
             sample_rate,
+            history: Vec::new(),
 
             f_avg: MovingAverageFilter::new(32),
             f_low_pass: LowPassFilter::new(2300.0, sample_rate as f32),
@@ -80,6 +82,23 @@ impl SstvDecoder {
                 self.state = DecoderState::decoding(self.sample_rate);
             }
             DecoderState::Decoding { sync, img, row } => {
+                {
+                    if self.history.is_empty() && freq != 0.0 || !self.history.is_empty() {
+                        self.history.push(freq);
+                    }
+
+                    if self.history.len() == self.sample_rate as usize {
+                        println!("saving debug");
+
+                        let mut csv = String::new();
+                        for sample in &self.history {
+                            csv.push_str(&format!("{sample}\n"));
+                        }
+
+                        fs::write("out.csv", csv).unwrap();
+                    }
+                }
+
                 if !sync.update(freq) {
                     let value = (freq - 1500.0) / (2300.0 - 1500.0);
                     row.push(value.saturate());
@@ -87,6 +106,7 @@ impl SstvDecoder {
                 }
 
                 if row.len() > (0.2 * self.sample_rate as f32) as usize {
+                    println!("Row {}/255", img.y);
                     img.push_row(row);
                     row.clear();
 

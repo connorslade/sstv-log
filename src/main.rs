@@ -30,7 +30,6 @@ fn main() -> Result<()> {
     let mut decoder = SstvDecoder::new(sample_rate, tx);
 
     let mut buffer = VecDeque::new();
-    let mut last = Complex::ZERO;
 
     let stream = device
         .build_input_stream(
@@ -38,22 +37,20 @@ fn main() -> Result<()> {
             move |chunk: &[f32], _info| {
                 buffer.extend(chunk);
                 while buffer.len() > FFT_SIZE {
-                    let chunk = buffer.drain(0..FFT_SIZE);
+                    let chunk = buffer.drain(..FFT_SIZE);
                     let signal = hilbert_transform(&mut planner, chunk);
-                    for next in signal {
-                        if last == Complex::ZERO {
-                            decoder.freq(0.0);
-                        } else {
-                            let freq = (next / last).arg() * sample_rate as f32 / TAU;
-                            decoder.freq(freq);
+
+                    for pair in signal.windows(2) {
+                        if pair[1] == Complex::ZERO {
+                            continue;
                         }
-                        last = next;
+
+                        let freq = (pair[1] / pair[0]).arg() * sample_rate as f32 / TAU;
+                        decoder.freq(freq);
                     }
                 }
             },
-            |err| {
-                println!("Error: {err}");
-            },
+            |err| println!("Error: {err}"),
             None,
         )
         .unwrap();
