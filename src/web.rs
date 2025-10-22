@@ -34,11 +34,9 @@ async fn events(
         loop {
             let event = rx.recv().await.unwrap();
             let msg = match event {
-                SstvEvent::DecodeStart => Message::Text("decode_start".into()),
-                SstvEvent::DecodeProgress(p) => {
-                    Message::Text(format!("decode_progress:{p}").into())
-                }
-                SstvEvent::DecodeEnd(image_buffer) => {
+                SstvEvent::Start => Message::Text("decode_start".into()),
+                SstvEvent::Progress(p) => Message::Text(format!("decode_progress:{p}").into()),
+                SstvEvent::End(image_buffer) => {
                     Message::Binary(Bytes::from_owner(image_buffer.into_raw()))
                 }
             };

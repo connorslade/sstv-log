@@ -24,9 +24,9 @@ pub struct SstvDecoder {
 
 #[derive(Debug, Clone)]
 pub enum SstvEvent {
-    DecodeStart,
-    DecodeProgress(f32),
-    DecodeEnd(Image),
+    Start,
+    Progress(f32),
+    End(Image),
 }
 
 enum DecoderState {
@@ -66,8 +66,8 @@ impl SstvDecoder {
                     return;
                 }
 
-                self.tx.send(SstvEvent::DecodeStart).unwrap();
-                self.state = DecoderState::decoding(self.sample_rate);
+                self.tx.send(SstvEvent::Start).unwrap();
+                self.state = DecoderState::decoding(self.sample_rate, self.sample);
             }
             DecoderState::Decoding {
                 sync,
@@ -76,7 +76,7 @@ impl SstvDecoder {
                 row,
             } => {
                 if self.sample - *last_sync > 3 * self.sample_rate as u64 {
-                    self.tx.send(SstvEvent::DecodeEnd(img.finish())).unwrap();
+                    self.tx.send(SstvEvent::End(img.finish())).unwrap();
                     self.state = DecoderState::idle(self.sample_rate);
                     return;
                 }
@@ -95,12 +95,12 @@ impl SstvDecoder {
                 *last_sync = self.sample;
                 if row.len() > (0.2 * self.sample_rate as f32) as usize {
                     let progress = img.y as f32 / img.img.height() as f32;
-                    self.tx.send(SstvEvent::DecodeProgress(progress)).unwrap();
+                    self.tx.send(SstvEvent::Progress(progress)).unwrap();
                     img.push_row(row);
                     row.clear();
 
                     if img.finished() {
-                        self.tx.send(SstvEvent::DecodeEnd(img.finish())).unwrap();
+                        self.tx.send(SstvEvent::End(img.finish())).unwrap();
                         self.state = DecoderState::idle(self.sample_rate);
                     }
                 }
@@ -116,10 +116,10 @@ impl DecoderState {
         }
     }
 
-    pub fn decoding(sample_rate: u32) -> Self {
+    pub fn decoding(sample_rate: u32, sample: u64) -> Self {
         DecoderState::Decoding {
             sync: PulseDetector::new(SYNC_PULSE, sample_rate),
-            last_sync: 0,
+            last_sync: sample,
 
             img: ImageBuilder::new(sample_rate, 320, 256),
             row: Vec::new(),

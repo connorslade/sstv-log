@@ -1,21 +1,20 @@
 let socket = new WebSocket("/events");
+let progress = document.querySelector("#progress");
 
-socket.addEventListener("message", (event) => {
-  console.log(event);
-
+socket.addEventListener("message", async (event) => {
   if (typeof event.data == "string") {
     let [type, data] = event.data.split(":", 2);
     if (type == "decode_start") {
       console.log("Starting decode");
     } else if (type == "decode_progress") {
-      let progress = parseFloat(data) * 100;
-      document.querySelector("#progress").value = progress;
+      progress.value = parseFloat(data) * 100;
     }
   } else {
-    window.imageData = event.data;
+    progress.value = 0;
 
-    console.log("got image data");
-    let image = new ImageData(new Uint8ClampedArray(event.data), 320);
+    let rgb = await event.data.bytes();
+    let rgba = new Uint8ClampedArray(rgb_to_rgba(rgb));
+    let image = new ImageData(rgba, 320);
 
     let canvas = document.createElement("canvas");
     canvas.width = image.width;
@@ -25,3 +24,16 @@ socket.addEventListener("message", (event) => {
     document.querySelector("body")?.appendChild(canvas);
   }
 });
+
+function rgb_to_rgba(rgb) {
+  let rgba = [];
+  for (let i = 0; i < rgb.length / 3; i++) {
+    let offset = 3 * i;
+    rgba.push(rgb[offset]);
+    rgba.push(rgb[offset + 1]);
+    rgba.push(rgb[offset + 2]);
+    rgba.push(255);
+  }
+
+  return rgba;
+}
