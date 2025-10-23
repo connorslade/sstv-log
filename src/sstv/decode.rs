@@ -11,6 +11,9 @@ use crate::{
     },
 };
 
+const VALUE_RANGE: (f32, f32) = (1500.0, 2300.0);
+const ABORT_TIMEOUT: f32 = 3.0;
+
 pub struct SstvDecoder {
     state: DecoderState,
     sample_rate: u32,
@@ -50,7 +53,7 @@ impl SstvDecoder {
             sample: 0,
 
             f_avg: MovingAverageFilter::new(32),
-            f_low_pass: LowPassFilter::new(2300.0, sample_rate as f32),
+            f_low_pass: LowPassFilter::new(VALUE_RANGE.1, sample_rate as f32),
 
             tx,
         }
@@ -75,15 +78,16 @@ impl SstvDecoder {
                 img,
                 row,
             } => {
-                if self.sample - *last_sync > 3 * self.sample_rate as u64 {
+                if (self.sample - *last_sync) as f32 > ABORT_TIMEOUT * self.sample_rate as f32 {
                     self.tx.send(SstvEvent::End(img.finish())).unwrap();
                     self.state = DecoderState::idle(self.sample_rate);
                     return;
                 }
 
                 if !sync.update(freq) {
-                    let value = (freq - 1500.0) / (2300.0 - 1500.0);
+                    let value = (freq - VALUE_RANGE.0) / (VALUE_RANGE.1 - VALUE_RANGE.0);
 
+                    // todo: test repeating last sample vs saturating
                     if value.abs() > 1.0 {
                         row.push(row.last().copied().unwrap_or_default());
                     } else {
@@ -94,8 +98,7 @@ impl SstvDecoder {
 
                 *last_sync = self.sample;
                 if row.len() > (0.2 * self.sample_rate as f32) as usize {
-                    let progress = img.y as f32 / img.img.height() as f32;
-                    self.tx.send(SstvEvent::Progress(progress)).unwrap();
+                    self.tx.send(SstvEvent::Progress(img.progress())).unwrap();
                     img.push_row(row);
                     row.clear();
 

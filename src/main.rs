@@ -26,42 +26,40 @@ fn main() -> Result<()> {
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
 
-    let mut configs = device.supported_input_configs().unwrap();
+    let mut configs = device.supported_input_configs()?;
     let config = configs.next().unwrap().with_sample_rate(SampleRate(44_100));
     let sample_rate = config.sample_rate().0;
 
-    let (tx, rx) = broadcast::channel::<SstvEvent>(1024);
+    let (tx, rx) = broadcast::channel::<SstvEvent>(128);
 
     let mut planner = FftPlanner::new();
     let mut decoder = SstvDecoder::new(sample_rate, tx);
 
     let mut buffer = VecDeque::new();
 
-    let stream = device
-        .build_input_stream(
-            &config.into(),
-            move |chunk: &[f32], _info| {
-                buffer.extend(chunk);
-                while buffer.len() > FFT_SIZE {
-                    let chunk = buffer.drain(..FFT_SIZE);
-                    let signal = hilbert_transform(&mut planner, chunk);
+    let stream = device.build_input_stream(
+        &config.into(),
+        move |chunk: &[f32], _info| {
+            buffer.extend(chunk);
+            while buffer.len() > FFT_SIZE {
+                let chunk = buffer.drain(..FFT_SIZE);
+                let signal = hilbert_transform(&mut planner, chunk);
 
-                    for [prev, next] in signal.array_windows() {
-                        let freq = if *prev == Complex::ZERO {
-                            0.0
-                        } else {
-                            (next / prev).arg() * sample_rate as f32 / TAU
-                        };
+                for [prev, next] in signal.array_windows() {
+                    let freq = if *prev == Complex::ZERO {
+                        0.0
+                    } else {
+                        (next / prev).arg() * sample_rate as f32 / TAU
+                    };
 
-                        decoder.freq(freq);
-                    }
+                    decoder.freq(freq);
                 }
-            },
-            |err| println!("Error: {err}"),
-            None,
-        )
-        .unwrap();
-    stream.play().unwrap();
+            }
+        },
+        |err| eprintln!("Error: {err}"),
+        None,
+    )?;
+    stream.play()?;
 
     Runtime::new()?.block_on(web_server(rx))?;
 
