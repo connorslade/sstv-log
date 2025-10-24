@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use image::{ImageBuffer, Rgb};
 
 pub type Image = ImageBuffer<Rgb<u8>, Vec<u8>>;
@@ -59,8 +60,9 @@ impl ImageBuilder {
         self.y >= self.img.as_ref().unwrap().height()
     }
 
-    pub fn finish(&mut self) -> Image {
-        self.img.take().unwrap()
+    pub fn finish(&mut self) -> Bytes {
+        let image = self.img.take().unwrap();
+        Bytes::from_owner(image.into_raw())
     }
 }
 

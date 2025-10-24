@@ -3,12 +3,14 @@ use std::sync::Arc;
 use anyhow::Result;
 use axum::{
     Router,
-    body::Bytes,
     extract::{State, WebSocketUpgrade, ws::Message},
     response::IntoResponse,
     routing::get,
 };
-use tokio::{net::TcpListener, sync::broadcast::Receiver};
+use tokio::{
+    net::TcpListener,
+    sync::broadcast::{Receiver, error::RecvError},
+};
 use tower_http::services::ServeDir;
 
 use crate::sstv::decode::SstvEvent;
@@ -32,13 +34,16 @@ async fn events(
     let mut rx = rx.resubscribe();
     ws.on_upgrade(async move |mut socket| {
         loop {
-            let event = rx.recv().await.unwrap();
+            let event = match rx.recv().await {
+                Ok(x) => x,
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => break,
+            };
+
             let msg = match event {
                 SstvEvent::Start => Message::Text("decode_start".into()),
                 SstvEvent::Progress(p) => Message::Text(format!("decode_progress:{p}").into()),
-                SstvEvent::End(image_buffer) => {
-                    Message::Binary(Bytes::from_owner(image_buffer.into_raw()))
-                }
+                SstvEvent::End(image) => Message::Binary(image),
             };
 
             if socket.send(msg).await.is_err() {

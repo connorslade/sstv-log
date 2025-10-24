@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use tokio::sync::broadcast::Sender;
 
 use crate::{
@@ -6,13 +7,15 @@ use crate::{
         filters::{LowPassFilter, MovingAverageFilter},
     },
     sstv::{
-        image::{Image, ImageBuilder},
+        image::ImageBuilder,
         pulse::{HEADER_PULSE, PulseDetector, SYNC_PULSE},
     },
 };
 
 const VALUE_RANGE: (f32, f32) = (1500.0, 2300.0);
 const ABORT_TIMEOUT: f32 = 3.0;
+const MIN_ROW_DURATION: f32 = 0.2; // ← verify this
+const IMAGE_DIMENTIONS: (u32, u32) = (320, 256);
 
 pub struct SstvDecoder {
     state: DecoderState,
@@ -29,7 +32,7 @@ pub struct SstvDecoder {
 pub enum SstvEvent {
     Start,
     Progress(f32),
-    End(Image),
+    End(Bytes),
 }
 
 enum DecoderState {
@@ -47,13 +50,15 @@ enum DecoderState {
 
 impl SstvDecoder {
     pub fn new(sample_rate: u32, tx: Sender<SstvEvent>) -> Self {
+        let (_, max_freq) = VALUE_RANGE;
+
         Self {
             state: DecoderState::idle(sample_rate),
             sample_rate,
             sample: 0,
 
             f_avg: MovingAverageFilter::new(32),
-            f_low_pass: LowPassFilter::new(VALUE_RANGE.1, sample_rate as f32),
+            f_low_pass: LowPassFilter::new(max_freq, sample_rate as f32),
 
             tx,
         }
@@ -85,7 +90,8 @@ impl SstvDecoder {
                 }
 
                 if !sync.update(freq) {
-                    let value = (freq - VALUE_RANGE.0) / (VALUE_RANGE.1 - VALUE_RANGE.0);
+                    let (min, max) = VALUE_RANGE;
+                    let value = (freq - min) / (max - min);
 
                     // todo: test repeating last sample vs saturating
                     if value.abs() > 1.0 {
@@ -97,7 +103,9 @@ impl SstvDecoder {
                 }
 
                 *last_sync = self.sample;
-                if row.len() > (0.2 * self.sample_rate as f32) as usize {
+
+                let min_row_samples = (MIN_ROW_DURATION * self.sample_rate as f32) as usize;
+                if row.len() > min_row_samples {
                     self.tx.send(SstvEvent::Progress(img.progress())).unwrap();
                     img.push_row(row);
                     row.clear();
@@ -120,11 +128,13 @@ impl DecoderState {
     }
 
     pub fn decoding(sample_rate: u32, sample: u64) -> Self {
+        let (width, height) = IMAGE_DIMENTIONS;
+
         DecoderState::Decoding {
             sync: PulseDetector::new(SYNC_PULSE, sample_rate),
             last_sync: sample,
 
-            img: ImageBuilder::new(sample_rate, 320, 256),
+            img: ImageBuilder::new(sample_rate, width, height),
             row: Vec::new(),
         }
     }
