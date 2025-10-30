@@ -11,6 +11,13 @@ pub const HEADER_PULSE: PulseDetectorConfig = PulseDetectorConfig {
     duration: 0.6,
 };
 
+pub const VIS_STOP_PULSE: PulseDetectorConfig = PulseDetectorConfig {
+    freq: 1200.0,
+    range: 50.0,
+    threshold: 0.50,
+    duration: 0.03,
+};
+
 pub const SYNC_PULSE: PulseDetectorConfig = PulseDetectorConfig {
     freq: 1200.0,
     range: 100.0,
