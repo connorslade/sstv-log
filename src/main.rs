@@ -12,7 +12,7 @@ use rustfft::FftPlanner;
 use tokio::{runtime::Runtime, sync::broadcast};
 
 use crate::{
-    dsp::hilbert_transform,
+    dsp::{LowPassFilter, hilbert_transform},
     sstv::decode::{SstvDecoder, SstvEvent},
     web::web_server,
 };
@@ -36,13 +36,14 @@ fn main() -> Result<()> {
     let mut decoder = SstvDecoder::new(sample_rate, tx);
 
     let mut buffer = VecDeque::new();
+    let mut low_pass = LowPassFilter::new(2300.0, sample_rate);
 
     let stream = device.build_input_stream(
         &config.into(),
         move |chunk: &[f32], _info| {
             buffer.extend(chunk);
             while buffer.len() > FFT_SIZE {
-                let chunk = buffer.drain(..FFT_SIZE);
+                let chunk = buffer.drain(..FFT_SIZE).map(|x| low_pass.update(x));
                 let signal = hilbert_transform(&mut planner, chunk);
 
                 for [prev, next] in signal.array_windows() {

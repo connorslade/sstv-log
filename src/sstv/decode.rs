@@ -1,16 +1,12 @@
+use std::fs;
+
 use axum::body::Bytes;
 use tokio::sync::broadcast::Sender;
 
-use crate::{
-    dsp::{
-        extentions::RealExt,
-        filters::{LowPassFilter, MovingAverageFilter},
-    },
-    sstv::{
-        image::ImageBuilder,
-        modes::SstvMode,
-        pulse::{HEADER_PULSE, PulseDetector, SYNC_PULSE, VIS_STOP_PULSE},
-    },
+use crate::sstv::{
+    image::ImageBuilder,
+    modes::SstvMode,
+    pulse::{HEADER_PULSE, PulseDetector, SYNC_PULSE, VIS_STOP_PULSE},
 };
 
 const VIS_BITS: (f32, f32) = (1300.0, 1100.0);
@@ -23,10 +19,8 @@ pub struct SstvDecoder {
     sample_rate: u32,
     sample: u64,
 
-    f_avg: MovingAverageFilter,
-    f_low_pass: LowPassFilter,
-
     tx: Sender<SstvEvent>,
+    debug: Vec<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,23 +49,30 @@ enum DecoderState {
 
 impl SstvDecoder {
     pub fn new(sample_rate: u32, tx: Sender<SstvEvent>) -> Self {
-        let (_, max_freq) = VALUE_RANGE;
-
         Self {
             state: DecoderState::idle(sample_rate),
             sample_rate,
             sample: 0,
 
-            f_avg: MovingAverageFilter::new(32),
-            f_low_pass: LowPassFilter::new(max_freq, sample_rate as f32),
-
             tx,
+            debug: Vec::new(),
         }
     }
 
     pub fn freq(&mut self, freq: f32) {
-        let freq = self.f_avg.update(self.f_low_pass.update(freq));
         self.sample += 1;
+
+        self.debug.push(freq);
+        if self.sample == 10 * self.sample_rate as u64 {
+            println!("sample rate: {} btw", self.sample_rate);
+            let contents = self
+                .debug
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write("debug-noavg.csv", contents).unwrap();
+        }
 
         match &mut self.state {
             DecoderState::Idle { header } => {
@@ -96,7 +97,7 @@ impl SstvDecoder {
 
                 if stop.update(freq) && bits.len() > vis_samples / 2 {
                     let mut value = 0_u8;
-                    for chunk in bits[..vis_samples].chunks(bit_samples) {
+                    for chunk in bits[..vis_samples.min(bits.len())].chunks(bit_samples) {
                         let p = chunk.iter().map(|&x| x as u32).sum::<u32>() as f32
                             / chunk.len() as f32;
 
@@ -132,7 +133,7 @@ impl SstvDecoder {
                     if value.abs() > 1.0 {
                         row.push(row.last().copied().unwrap_or_default());
                     } else {
-                        row.push(value.saturate());
+                        row.push(value.clamp(0.0, 1.0));
                     }
                     return;
                 }
