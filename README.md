@@ -7,7 +7,7 @@ Logs received SSTV images to a web-accessible database.
 ## Todo
 
 - [ ] Decoder
-  - [ ] Decode VIS codes
+  - [x] Decode VIS codes
   - [ ] Support multiple protocols
 - [ ] Interface
   - [ ] Store decodes in database (sqlite my beloved)

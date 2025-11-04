@@ -5,7 +5,7 @@ socket.addEventListener("message", async (event) => {
   if (typeof event.data == "string") {
     let [type, data] = event.data.split(":", 2);
     if (type == "decode_start") {
-      console.log("Starting decode");
+      console.log(`Starting decode of ${data}`);
     } else if (type == "decode_progress") {
       progress.value = parseFloat(data) * 100;
     }

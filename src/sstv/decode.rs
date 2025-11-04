@@ -25,7 +25,7 @@ pub struct SstvDecoder {
 
 #[derive(Debug, Clone)]
 pub enum SstvEvent {
-    Start,
+    Start(SstvMode),
     Progress(f32),
     End(Bytes),
 }
@@ -80,9 +80,7 @@ impl SstvDecoder {
                     return;
                 }
 
-                self.tx.send(SstvEvent::Start).unwrap();
                 self.state = DecoderState::vis(self.sample_rate);
-                println!("Decoding VIS");
             }
             DecoderState::Vis { stop, bits } => {
                 let (zero_freq, one_freq) = VIS_BITS;
@@ -106,10 +104,9 @@ impl SstvDecoder {
                     }
 
                     // todo: figure out parity bit...
-                    println!("{value:b} → {value}");
                     let vis = SstvMode::from_vis(value);
-                    dbg!(vis);
 
+                    self.tx.send(SstvEvent::Start(vis)).unwrap();
                     self.state = DecoderState::decoding(self.sample_rate, self.sample);
                 }
             }

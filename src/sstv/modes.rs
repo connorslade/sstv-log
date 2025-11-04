@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SstvMode {
     Martin1,
     Martin2,
@@ -34,6 +34,19 @@ impl SstvMode {
             12 => SstvMode::Robot72,
 
             x => SstvMode::Unknown(x),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            SstvMode::Martin1 => "Martin 1",
+            SstvMode::Martin2 => "Martin 2",
+            SstvMode::Scottie1 => "Scottie 1",
+            SstvMode::Scottie2 => "Scottie 2",
+            SstvMode::ScottieDX => "Scottie DX",
+            SstvMode::Robot36 => "Robot 36",
+            SstvMode::Robot72 => "Robot 72",
+            SstvMode::Unknown(_) => "Unknown",
         }
     }
 

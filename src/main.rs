@@ -21,13 +21,15 @@ mod sstv;
 mod web;
 
 const FFT_SIZE: usize = 1 << 13;
+const SAMPLE_RATE: SampleRate = SampleRate(44_100);
+const MAX_FREQ: f32 = 2300.0;
 
 fn main() -> Result<()> {
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
 
     let mut configs = device.supported_input_configs()?;
-    let config = configs.next().unwrap().with_sample_rate(SampleRate(44_100));
+    let config = configs.next().unwrap().with_sample_rate(SAMPLE_RATE);
     let sample_rate = config.sample_rate().0;
 
     let (tx, rx) = broadcast::channel::<SstvEvent>(128);
@@ -36,7 +38,7 @@ fn main() -> Result<()> {
     let mut decoder = SstvDecoder::new(sample_rate, tx);
 
     let mut buffer = VecDeque::new();
-    let mut low_pass = LowPassFilter::new(2300.0, sample_rate);
+    let mut low_pass = LowPassFilter::new(MAX_FREQ, sample_rate);
 
     let stream = device.build_input_stream(
         &config.into(),

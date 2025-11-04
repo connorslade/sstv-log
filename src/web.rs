@@ -41,7 +41,9 @@ async fn events(
             };
 
             let msg = match event {
-                SstvEvent::Start => Message::Text("decode_start".into()),
+                SstvEvent::Start(mode) => {
+                    Message::Text(format!("decode_start:{}", mode.name()).into())
+                }
                 SstvEvent::Progress(p) => Message::Text(format!("decode_progress:{p}").into()),
                 SstvEvent::End(image) => Message::Binary(image),
             };
