@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum SstvMode {
     Martin1,
     Martin2,
@@ -34,6 +34,22 @@ impl SstvMode {
             12 => SstvMode::Robot72,
 
             x => SstvMode::Unknown(x),
+        }
+    }
+
+    pub fn to_vis(&self) -> u8 {
+        match self {
+            SstvMode::Martin1 => 44,
+            SstvMode::Martin2 => 40,
+
+            SstvMode::Scottie1 => 60,
+            SstvMode::Scottie2 => 56,
+            SstvMode::ScottieDX => 76,
+
+            SstvMode::Robot36 => 8,
+            SstvMode::Robot72 => 12,
+
+            SstvMode::Unknown(_) => 0,
         }
     }
 

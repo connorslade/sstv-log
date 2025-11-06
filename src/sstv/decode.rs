@@ -27,7 +27,7 @@ pub struct SstvDecoder {
 pub enum SstvEvent {
     Start(SstvMode),
     Progress(f32),
-    End(Bytes),
+    End(SstvMode, Bytes),
 }
 
 enum DecoderState {
@@ -41,6 +41,7 @@ enum DecoderState {
     Decoding {
         sync: PulseDetector,
         last_sync: u64,
+        mode: SstvMode,
 
         img: ImageBuilder,
         row: Vec<f32>,
@@ -107,17 +108,18 @@ impl SstvDecoder {
                     let vis = SstvMode::from_vis(value);
 
                     self.tx.send(SstvEvent::Start(vis)).unwrap();
-                    self.state = DecoderState::decoding(self.sample_rate, self.sample);
+                    self.state = DecoderState::decoding(vis, self.sample_rate, self.sample);
                 }
             }
             DecoderState::Decoding {
                 sync,
                 last_sync,
+                mode,
                 img,
                 row,
             } => {
                 if (self.sample - *last_sync) as f32 > ABORT_TIMEOUT * self.sample_rate as f32 {
-                    self.tx.send(SstvEvent::End(img.finish())).unwrap();
+                    self.tx.send(SstvEvent::End(*mode, img.finish())).unwrap();
                     self.state = DecoderState::idle(self.sample_rate);
                     return;
                 }
@@ -144,7 +146,7 @@ impl SstvDecoder {
                     row.clear();
 
                     if img.finished() {
-                        self.tx.send(SstvEvent::End(img.finish())).unwrap();
+                        self.tx.send(SstvEvent::End(*mode, img.finish())).unwrap();
                         self.state = DecoderState::idle(self.sample_rate);
                     }
                 }
@@ -167,12 +169,13 @@ impl DecoderState {
         }
     }
 
-    fn decoding(sample_rate: u32, sample: u64) -> Self {
+    fn decoding(mode: SstvMode, sample_rate: u32, sample: u64) -> Self {
         let (width, height) = IMAGE_DIMENTIONS;
 
         DecoderState::Decoding {
             sync: PulseDetector::new(SYNC_PULSE, sample_rate),
             last_sync: sample,
+            mode,
 
             img: ImageBuilder::new(sample_rate, width, height),
             row: Vec::new(),
