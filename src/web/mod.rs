@@ -6,18 +6,23 @@ use std::{
 use anyhow::Result;
 use axum::{
     Router,
-    extract::{State, WebSocketUpgrade, ws::Message},
-    response::IntoResponse,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::get,
 };
-use tokio::{
-    net::TcpListener,
-    sync::broadcast::{Receiver, error::RecvError},
-};
+use tokio::{net::TcpListener, sync::broadcast::Receiver};
 use tower_http::services::ServeDir;
 use turso::Connection;
 
 use crate::sstv::decode::SstvEvent;
+
+mod events;
+mod image;
+use events::events;
+use image::{image, images};
+
+type AnyResult<T> = axum::response::Result<T, AnyError>;
+struct AnyError(anyhow::Error);
 
 struct App {
     rx: Receiver<SstvEvent>,
@@ -31,7 +36,8 @@ pub async fn web_server(rx: Receiver<SstvEvent>) -> Result<()> {
         .await?
         .connect()?;
 
-    db.execute(include_str!("sql/init_images.sql"), ()).await?;
+    db.execute(include_str!("../sql/init_images.sql"), ())
+        .await?;
     let state = Arc::new(App { rx, db });
 
     let this = state.clone();
@@ -47,7 +53,7 @@ pub async fn web_server(rx: Receiver<SstvEvent>) -> Result<()> {
 
                 this.db
                     .execute(
-                        "INSERT INTO images VALUES (?, ?, ?)",
+                        "INSERT INTO images (timestamp, protocol, image) VALUES (?, ?, ?)",
                         (time, mode.to_vis(), &image[..]),
                     )
                     .await
@@ -59,6 +65,8 @@ pub async fn web_server(rx: Receiver<SstvEvent>) -> Result<()> {
     let serve = ServeDir::new("web").append_index_html_on_directories(true);
     let service = Router::new()
         .route("/events", get(events))
+        .route("/images", get(images))
+        .route("/image/{id}", get(image))
         .fallback_service(serve)
         .with_state(state);
 
@@ -67,27 +75,18 @@ pub async fn web_server(rx: Receiver<SstvEvent>) -> Result<()> {
     Ok(())
 }
 
-async fn events(ws: WebSocketUpgrade, State(app): State<Arc<App>>) -> impl IntoResponse {
-    let mut rx = app.rx.resubscribe();
-    ws.on_upgrade(async move |mut socket| {
-        loop {
-            let event = match rx.recv().await {
-                Ok(x) => x,
-                Err(RecvError::Lagged(_)) => continue,
-                Err(RecvError::Closed) => break,
-            };
+impl IntoResponse for AnyError {
+    fn into_response(self) -> Response {
+        let msg = format!("Internal server error: {}", self.0);
+        (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+    }
+}
 
-            let msg = match event {
-                SstvEvent::Start(mode) => {
-                    Message::Text(format!("decode_start:{}", mode.name()).into())
-                }
-                SstvEvent::Progress(p) => Message::Text(format!("decode_progress:{p}").into()),
-                SstvEvent::End(_, image) => Message::Binary(image),
-            };
-
-            if socket.send(msg).await.is_err() {
-                break;
-            };
-        }
-    })
+impl<E> From<E> for AnyError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
 }
