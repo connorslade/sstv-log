@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc, u64};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -19,33 +19,19 @@ struct Image {
     mode: SstvMode,
 }
 
-#[derive(Deserialize)]
-pub struct Pagination {
-    before: Option<u64>,
-    limit: u64,
-}
-
-pub async fn images(
-    State(app): State<Arc<App>>,
-    Query(pagination): Query<Pagination>,
-) -> AnyResult<impl IntoResponse> {
-    let before = pagination.before.unwrap_or(i64::MAX as u64);
+pub async fn images(State(app): State<Arc<App>>) -> AnyResult<impl IntoResponse> {
     let mut entries = (app.db)
-        .query(
-            include_str!("../sql/select_images.sql"),
-            (before, pagination.limit),
-        )
+        .query(include_str!("../sql/select_images.sql"), ())
         .await?;
 
     let mut images = HashMap::<u64, Image>::new();
     while let Some(entry) = entries.next().await? {
-        images.insert(
-            entry.get(0)?,
-            Image {
-                timestamp: entry.get(1)?,
-                mode: SstvMode::from_vis(entry.get::<u32>(2)? as u8),
-            },
-        );
+        let image = Image {
+            timestamp: entry.get(1)?,
+            mode: SstvMode::from_vis(entry.get::<u32>(2)? as u8),
+        };
+
+        images.insert(entry.get(0)?, image);
     }
 
     Ok(Json(images))

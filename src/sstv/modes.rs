@@ -39,7 +39,7 @@ impl SstvMode {
         }
     }
 
-    pub fn to_vis(&self) -> u8 {
+    pub fn to_vis(self) -> u8 {
         match self {
             SstvMode::Martin1 => 44,
             SstvMode::Martin2 => 40,

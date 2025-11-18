@@ -25,27 +25,18 @@ socket.addEventListener("message", async (event) => {
   }
 });
 
-load_history();
-
-function load_history(before) {
-  let url = "/images?limit=15";
-  if (before) url.push(`&before=${before}`);
-  fetch(url)
-    .then((r) => r.json())
-    .then((d) => {
-      for (let [idx, info] of Object.entries(d)) {
-        let canvas = image_container(
-          info.mode,
-          new Date(info.timestamp * 1000),
-        );
-        fetch(`/image/${idx}`)
-          .then((r) => r.bytes())
-          .then((rgb) => {
-            image_to_canvas(canvas, rgb);
-          });
-      }
-    });
-}
+fetch("/images")
+  .then((r) => r.json())
+  .then((d) => {
+    for (let [idx, info] of Object.entries(d)) {
+      let canvas = image_container(info.mode, new Date(info.timestamp * 1000));
+      fetch(`/image/${idx}`)
+        .then((r) => r.bytes())
+        .then((rgb) => {
+          image_to_canvas(canvas, rgb);
+        });
+    }
+  });
 
 function image_container(mode, date, first) {
   let container = document.createElement("div");
