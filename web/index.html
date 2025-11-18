@@ -10,12 +10,22 @@
             canvas {
                 image-rendering: crisp-edges;
             }
+
+            #history {
+                display: flex;
+                gap: 1em;
+
+                & > div > p {
+                    margin-top: 0;
+                }
+            }
         </style>
     </head>
     <body>
         <h1>SSTV Log</h1>
-
         <progress id="progress" max="100" value="0"></progress>
-        <br />
+
+        <h2>Image History</h2>
+        <div id="history"></div>
     </body>
 </html>

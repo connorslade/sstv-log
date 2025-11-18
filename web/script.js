@@ -1,3 +1,9 @@
+const PROTOCOL_INFO = {
+  Martin1: {
+    size: [320, 256],
+  },
+};
+
 let socket = new WebSocket("/events");
 let progress = document.querySelector("#progress");
 
@@ -12,18 +18,54 @@ socket.addEventListener("message", async (event) => {
   } else {
     progress.value = 0;
 
+    let canvas = canvas_for("Martin1");
     let rgb = await event.data.bytes();
-    let rgba = new Uint8ClampedArray(rgb_to_rgba(rgb));
-    let image = new ImageData(rgba, 320);
+    image_to_canvas(canvas, rgb);
 
-    let canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    let ctx = canvas.getContext("2d");
-    ctx.putImageData(image, 0, 0);
     document.querySelector("body")?.appendChild(canvas);
   }
 });
+
+fetch("/images")
+  .then((r) => r.json())
+  .then((d) => {
+    let history = document.querySelector("#history");
+    for (let [idx, info] of Object.entries(d)) {
+      let container = document.createElement("div");
+
+      let canvas = canvas_for(info.mode);
+      container.appendChild(canvas);
+
+      let text = document.createElement("p");
+      text.innerText = `Received ${new Date(info.timestamp * 1000).toLocaleString()}`;
+      container.appendChild(text);
+
+      history.appendChild(container);
+
+      fetch(`/image/${idx}`)
+        .then((r) => r.bytes())
+        .then((b) => {
+          image_to_canvas(canvas, b);
+        });
+    }
+  });
+
+function canvas_for(mode) {
+  let info = PROTOCOL_INFO[mode];
+  let canvas = document.createElement("canvas");
+  canvas.width = info.size[0];
+  canvas.height = info.size[1];
+
+  return canvas;
+}
+
+function image_to_canvas(canvas, rgb) {
+  let rgba = new Uint8ClampedArray(rgb_to_rgba(rgb));
+  let image = new ImageData(rgba, 320);
+
+  let ctx = canvas.getContext("2d");
+  ctx.putImageData(image, 0, 0);
+}
 
 function rgb_to_rgba(rgb) {
   let rgba = [];
