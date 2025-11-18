@@ -1,9 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, u64};
 
 use anyhow::Context;
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -19,9 +19,22 @@ struct Image {
     mode: SstvMode,
 }
 
-pub async fn images(State(app): State<Arc<App>>) -> AnyResult<impl IntoResponse> {
+#[derive(Deserialize)]
+pub struct Pagination {
+    before: Option<u64>,
+    limit: u64,
+}
+
+pub async fn images(
+    State(app): State<Arc<App>>,
+    Query(pagination): Query<Pagination>,
+) -> AnyResult<impl IntoResponse> {
+    let before = pagination.before.unwrap_or(i64::MAX as u64);
     let mut entries = (app.db)
-        .query("SELECT id, timestamp, protocol FROM images;", ())
+        .query(
+            include_str!("../sql/select_images.sql"),
+            (before, pagination.limit),
+        )
         .await?;
 
     let mut images = HashMap::<u64, Image>::new();

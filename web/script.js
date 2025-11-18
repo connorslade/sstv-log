@@ -6,6 +6,7 @@ const PROTOCOL_INFO = {
 
 let socket = new WebSocket("/events");
 let progress = document.querySelector("#progress");
+let history = document.querySelector("#history");
 
 socket.addEventListener("message", async (event) => {
   if (typeof event.data == "string") {
@@ -18,43 +19,49 @@ socket.addEventListener("message", async (event) => {
   } else {
     progress.value = 0;
 
-    let canvas = canvas_for("Martin1");
+    let canvas = image_container("Martin1", new Date());
     let rgb = await event.data.bytes();
     image_to_canvas(canvas, rgb);
-
-    document.querySelector("body")?.appendChild(canvas);
   }
 });
 
-fetch("/images")
-  .then((r) => r.json())
-  .then((d) => {
-    let history = document.querySelector("#history");
-    for (let [idx, info] of Object.entries(d)) {
-      let container = document.createElement("div");
+load_history();
 
-      let canvas = canvas_for(info.mode);
-      container.appendChild(canvas);
+function load_history(before) {
+  let url = "/images?limit=15";
+  if (before) url.push(`&before=${before}`);
+  fetch(url)
+    .then((r) => r.json())
+    .then((d) => {
+      for (let [idx, info] of Object.entries(d)) {
+        let canvas = image_container(
+          info.mode,
+          new Date(info.timestamp * 1000),
+        );
+        fetch(`/image/${idx}`)
+          .then((r) => r.bytes())
+          .then((rgb) => {
+            image_to_canvas(canvas, rgb);
+          });
+      }
+    });
+}
 
-      let text = document.createElement("p");
-      text.innerText = `Received ${new Date(info.timestamp * 1000).toLocaleString()}`;
-      container.appendChild(text);
+function image_container(mode, date, first) {
+  let container = document.createElement("div");
 
-      history.appendChild(container);
-
-      fetch(`/image/${idx}`)
-        .then((r) => r.bytes())
-        .then((b) => {
-          image_to_canvas(canvas, b);
-        });
-    }
-  });
-
-function canvas_for(mode) {
   let info = PROTOCOL_INFO[mode];
   let canvas = document.createElement("canvas");
   canvas.width = info.size[0];
   canvas.height = info.size[1];
+  container.appendChild(canvas);
+
+  let text = document.createElement("p");
+  text.innerText = `Received ${date.toLocaleString()}`;
+  container.appendChild(text);
+
+  if (first) history.insertBefore(container, history.firstChild);
+  else history.appendChild(container);
 
   return canvas;
 }
