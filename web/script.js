@@ -28,9 +28,10 @@ socket.addEventListener("message", async (event) => {
 fetch("/images")
   .then((r) => r.json())
   .then((d) => {
-    for (let [idx, info] of Object.entries(d)) {
-      let canvas = image_container(info.mode, new Date(info.timestamp * 1000));
-      fetch(`/image/${idx}`)
+    for (let image of d) {
+      let date = new Date(image.timestamp * 1000);
+      let canvas = image_container(image.mode, date);
+      fetch(`/image/${image.id}`)
         .then((r) => r.bytes())
         .then((rgb) => {
           image_to_canvas(canvas, rgb);

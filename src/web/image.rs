@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
 use axum::{
@@ -15,6 +15,7 @@ use crate::{
 
 #[derive(Serialize, Deserialize)]
 struct Image {
+    id: u64,
     timestamp: u64,
     mode: SstvMode,
 }
@@ -24,14 +25,15 @@ pub async fn images(State(app): State<Arc<App>>) -> AnyResult<impl IntoResponse>
         .query(include_str!("../sql/select_images.sql"), ())
         .await?;
 
-    let mut images = HashMap::<u64, Image>::new();
+    let mut images = Vec::new();
     while let Some(entry) = entries.next().await? {
         let image = Image {
+            id: entry.get(0)?,
             timestamp: entry.get(1)?,
             mode: SstvMode::from_vis(entry.get::<u32>(2)? as u8),
         };
 
-        images.insert(entry.get(0)?, image);
+        images.push(image);
     }
 
     Ok(Json(images))
